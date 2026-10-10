@@ -1,7 +1,7 @@
 """
-Single-Deck Blackjack Strategy Engine.
+8-Deck Blackjack Strategy Engine.
 Includes:
-- Single deck (shuffled before each hand)
+- 8 decks shuffled fresh before each hand
 - Double Down rules with intelligent fallback
 - Pair splits with NO RESPLIT constraint
 - 5-Card Charlie rule (auto-win on 5 cards under 22; safe hit on 4 cards)
@@ -58,20 +58,21 @@ def get_hard_action(total: int, dealer_card: Card) -> Action:
             return Action.STAND
         return Action.HIT
     if total == 11:
+        # 8-deck: double vs 2-10 only; HIT vs Ace
+        if dealer_card == Card.ACE:
+            return Action.HIT
         return Action.DOUBLE_DOWN
     if total == 10:
         if dealer_card in (Card.TEN, Card.ACE):
             return Action.HIT
         return Action.DOUBLE_DOWN
     if total == 9:
-        if dealer_card in (Card.TWO, Card.THREE, Card.FOUR, Card.FIVE, Card.SIX):
+        # 8-deck: double vs 3-6 only
+        if dealer_card in (Card.THREE, Card.FOUR, Card.FIVE, Card.SIX):
             return Action.DOUBLE_DOWN
         return Action.HIT
-    if total == 8:
-        if dealer_card in (Card.FIVE, Card.SIX):
-            return Action.DOUBLE_DOWN
-        return Action.HIT
-    return Action.HIT  # 5..7
+    # Hard 8 and below: always HIT in 8-deck (no doubling)
+    return Action.HIT  # 5..8
 
 
 def get_soft_action(other_card: int, dealer_card: Card) -> Action:
@@ -79,55 +80,64 @@ def get_soft_action(other_card: int, dealer_card: Card) -> Action:
     if other_card >= 9:  # Soft 20, 21
         return Action.STAND
     if other_card == 8:  # Soft 19
-        return Action.DOUBLE_DOWN if dealer_card == Card.SIX else Action.STAND
+        # 8-deck: stand (do not double Soft 19)
+        return Action.STAND
     if other_card == 7:  # Soft 18
-        if dealer_card in (Card.THREE, Card.FOUR, Card.FIVE, Card.SIX):
-            return Action.DOUBLE_DOWN
-        if dealer_card in (Card.TWO, Card.SEVEN, Card.EIGHT, Card.ACE):
-            return Action.STAND
-        return Action.HIT  # vs 9, 10
-    if other_card == 6:  # Soft 17
+        # 8-deck: double vs 2-6, stand vs 7-8, hit vs 9-10-A
         if dealer_card in (Card.TWO, Card.THREE, Card.FOUR, Card.FIVE, Card.SIX):
             return Action.DOUBLE_DOWN
+        if dealer_card in (Card.SEVEN, Card.EIGHT):
+            return Action.STAND
+        return Action.HIT  # vs 9, 10, Ace
+    if other_card == 6:  # Soft 17
+        # 8-deck: double vs 3-6 only
+        if dealer_card in (Card.THREE, Card.FOUR, Card.FIVE, Card.SIX):
+            return Action.DOUBLE_DOWN
         return Action.HIT
-    if 2 <= other_card <= 5:  # Soft 13..16
+    if other_card == 5 or other_card == 4:  # Soft 15, 16
+        # 8-deck: double vs 4-6
         if dealer_card in (Card.FOUR, Card.FIVE, Card.SIX):
+            return Action.DOUBLE_DOWN
+        return Action.HIT
+    if other_card == 3 or other_card == 2:  # Soft 13, 14
+        # 8-deck: double vs 5-6 only
+        if dealer_card in (Card.FIVE, Card.SIX):
             return Action.DOUBLE_DOWN
         return Action.HIT
     return Action.HIT  # Soft 12 (A,A)
 
 
 def get_pair_action(card_value: int, dealer_card: Card) -> Action:
-    if card_value in (1, 11, 8):  # Aces or 8s
+    if card_value in (1, 11, 8):  # Aces or 8s — always split
         return Action.SPLIT
     if card_value == 10:
         return Action.STAND
     if card_value == 9:
+        # 8-deck: split vs 2-6, 8-9; stand vs 7, 10, Ace
         if dealer_card in (Card.SEVEN, Card.TEN, Card.ACE):
             return Action.STAND
         return Action.SPLIT
     if card_value == 7:
+        # 8-deck: split vs 2-7; hit otherwise
         if dealer_card in (Card.TWO, Card.THREE, Card.FOUR, Card.FIVE, Card.SIX, Card.SEVEN):
             return Action.SPLIT
-        if dealer_card == Card.TEN:
-            return Action.STAND
         return Action.HIT
     if card_value == 6:
+        # 8-deck: split vs 2-6; hit otherwise
         if dealer_card in (Card.TWO, Card.THREE, Card.FOUR, Card.FIVE, Card.SIX):
             return Action.SPLIT
         return Action.HIT
     if card_value == 5:
+        # Treat 5,5 as Hard 10 — never split
         if dealer_card in (Card.TEN, Card.ACE):
             return Action.HIT
         return Action.DOUBLE_DOWN
     if card_value == 4:
-        if dealer_card in (Card.FIVE, Card.SIX):
-            return Action.DOUBLE_DOWN
+        # 8-deck: never split 4s; always HIT
         return Action.HIT
     if card_value in (2, 3):
-        if dealer_card in (Card.FOUR, Card.FIVE, Card.SIX, Card.SEVEN):
-            return Action.SPLIT
-        if card_value == 2 and dealer_card == Card.THREE:
+        # 8-deck: split vs 2-7
+        if dealer_card in (Card.TWO, Card.THREE, Card.FOUR, Card.FIVE, Card.SIX, Card.SEVEN):
             return Action.SPLIT
         return Action.HIT
     return Action.HIT

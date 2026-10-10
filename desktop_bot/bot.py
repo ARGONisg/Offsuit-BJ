@@ -157,7 +157,7 @@ class BlackjackBot:
         width, height = self.adb.get_screen_size()
         print(f"Connected to device: {GREEN}{width}x{height}{RESET}")
         print(f"Tesseract OCR:       {GREEN}{self.detector.tesseract_path}{RESET}")
-        print(f"Rules:               {CYAN}Single Deck, Double Down, No Resplit, 5-Card Charlie{RESET}")
+        print(f"Rules:               {CYAN}8 Decks (shuffled each hand), Double Down, No Resplit, 5-Card Charlie{RESET}")
         print(f"\n{YELLOW}Bot is running. Press Ctrl+C to stop at any time.{RESET}\n")
 
         consecutive_betting_ticks = 0
