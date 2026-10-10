@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<data-extraction-rules>
-    <cloud-network>
-        <allow>
-            <include domain="sharedpref" path="."/>
-        </allow>
-    </cloud-network>
-</data-extraction-rules>

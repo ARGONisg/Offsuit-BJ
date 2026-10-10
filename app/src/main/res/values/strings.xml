@@ -1,5 +1,0 @@
-<resources>
-    <string name="app_name">BJ Trainer Bot</string>
-    <string name="accessibility_service_name">Blackjack Auto Player</string>
-    <string name="accessibility_service_desc">Inspects screen for Blackjack hands and automatically taps Hit/Stand/Double/Split according to basic strategy.</string>
-</resources>
