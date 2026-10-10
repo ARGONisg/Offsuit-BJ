@@ -1,0 +1,21 @@
+R_DEF: Internal format may change without notice
+local
+id btnAccessibility
+id btnClose
+id btnOverlay
+id btnStartOverlay
+id btnToggle
+id tvLastAction
+id tvPermissions
+id tvStatus
+id tvTitle
+layout activity_main
+layout overlay_layout
+string accessibility_service_desc
+string accessibility_service_name
+string app_name
+style Base.Theme.OffsuitBJTrainer
+style Theme.OffsuitBJTrainer
+xml accessibility_service_config
+xml backup_rules
+xml data_extraction_rules

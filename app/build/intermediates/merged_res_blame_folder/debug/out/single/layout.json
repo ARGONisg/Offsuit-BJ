@@ -1,0 +1,10 @@
+[
+    {
+        "merged": "com.bjtrainer.app-mergeDebugResources-32:/layout/overlay_layout.xml",
+        "source": "com.bjtrainer.app-main-35:/layout/overlay_layout.xml"
+    },
+    {
+        "merged": "com.bjtrainer.app-mergeDebugResources-32:/layout/activity_main.xml",
+        "source": "com.bjtrainer.app-main-35:/layout/activity_main.xml"
+    }
+]
