@@ -14,6 +14,7 @@ from adb_controller import AdbController
 from logger import BotLogger
 from ocr_detector import OcrDetector, GameState
 from strategy import Action, Card, get_action
+from tracker import BankrollTracker
 
 # Terminal color formatting
 CYAN = "\033[96m"
@@ -69,6 +70,7 @@ class BlackjackBot:
     def __init__(self, adb_path: str = None, tesseract_path: str = None, log_dir: str = None):
         self.logger = BotLogger(log_dir)
         self.logger.start()
+        self.tracker = BankrollTracker()
         self.adb = AdbController(adb_path)
         work_dir = os.path.join(os.path.dirname(__file__), "work")
         self.detector = OcrDetector(tesseract_path, work_dir=work_dir)
@@ -104,6 +106,8 @@ class BlackjackBot:
 
         print("\nExtracting regions and running OCR...")
         state = self.detector.detect(img_path)
+        if not state.bankroll:
+            state.bankroll = self.detector.read_bankroll(img_path)
 
         print(f"\n{BOLD}Detection Results:{RESET}")
         print(f"  Phase:        {GREEN if state.phase == 'PLAYING' else YELLOW}{state.phase}{RESET}")
@@ -115,6 +119,7 @@ class BlackjackBot:
         print(f"  Avail Btns:   {sorted(state.available_buttons.keys()) if state.available_buttons else []}")
         print(f"  Can Double:   {state.can_double}")
         print(f"  Can Split:    {state.can_split}")
+        print(f"  Bankroll:     {state.bankroll if state.bankroll else 'None'}")
 
         print(f"\n{GREEN}Calibration files saved to {self.detector.work_dir}/{RESET}\n")
 
@@ -195,8 +200,24 @@ class BlackjackBot:
                     consecutive_waiting_ticks = 0
                     self.active_hand_index = 0
                     self.advance_hand = False
+
+                    # Update bankroll tracker if chips total detected
+                    if state.bankroll is not None:
+                        result = self.tracker.update(state.bankroll)
+                        if result:
+                            outcome_color = GREEN if result["outcome"] == "WIN" else RED
+                            sign = "+" if result["delta"] > 0 else ""
+                            print(
+                                f"[{time.strftime('%H:%M:%S')}] {BOLD}{outcome_color}"
+                                f">> HAND RESULT: {result['outcome']} ({sign}{result['delta']:,} chips) | "
+                                f"Bankroll: {result['chips']:,} | Net: {result['net_profit']:+,} | "
+                                f"Win Rate: {result['win_rate']:.1f}% ({self.tracker.wins}W-{self.tracker.losses}L)"
+                                f"{RESET}"
+                            )
+
                     if consecutive_betting_ticks % 6 == 1:
-                        msg = "[BETTING] Waiting for deal... (chips untouched)"
+                        chips_info = f"{state.bankroll:,}" if state.bankroll else "chips untouched"
+                        msg = f"[BETTING] Waiting for deal... ({chips_info})"
                         print(f"[{time.strftime('%H:%M:%S')}] {YELLOW}{msg}{RESET}")
                         self.error_tracker.check(msg)
                     # Relaxed pacing in betting phase to prevent CPU heat
@@ -303,6 +324,8 @@ class BlackjackBot:
 
         except KeyboardInterrupt:
             print(f"\n{YELLOW}Bot stopped by user.{RESET}")
+            if self.tracker.hands_played > 0:
+                print(f"\n{self.tracker.format_summary()}\n")
 
 
 if __name__ == "__main__":

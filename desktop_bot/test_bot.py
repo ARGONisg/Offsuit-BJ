@@ -5,6 +5,49 @@ Verification tests for strategy engine and OCR detector.
 import unittest
 from strategy import Action, Card, get_action
 from ocr_detector import OcrDetector
+from tracker import BankrollTracker
+
+
+class TestTracker(unittest.TestCase):
+    def test_bankroll_tracker_outcomes(self):
+        tracker = BankrollTracker()
+        
+        # First reading: initializes baseline
+        res1 = tracker.update(1000)
+        self.assertIsNone(res1)
+        self.assertEqual(tracker.start_bankroll, 1000)
+        self.assertEqual(tracker.hands_played, 0)
+
+        # Hand 1: +100 -> WIN
+        res2 = tracker.update(1100)
+        self.assertIsNotNone(res2)
+        self.assertEqual(res2["outcome"], "WIN")
+        self.assertEqual(res2["delta"], 100)
+        self.assertEqual(tracker.wins, 1)
+        self.assertEqual(tracker.losses, 0)
+        self.assertEqual(tracker.net_profit, 100)
+        self.assertEqual(tracker.win_rate, 100.0)
+
+        # Hand 2: -50 -> LOSS
+        res3 = tracker.update(1050)
+        self.assertIsNotNone(res3)
+        self.assertEqual(res3["outcome"], "LOSS")
+        self.assertEqual(res3["delta"], -50)
+        self.assertEqual(tracker.wins, 1)
+        self.assertEqual(tracker.losses, 1)
+        self.assertEqual(tracker.net_profit, 50)
+        self.assertEqual(tracker.win_rate, 50.0)
+
+        # Hand 3: Push
+        tracker.record_push(1050)
+        self.assertEqual(tracker.pushes, 1)
+        self.assertEqual(tracker.hands_played, 3)
+        self.assertEqual(tracker.win_rate, 50.0)
+
+        summary = tracker.format_summary()
+        self.assertIn("SESSION STATS", summary)
+        self.assertIn("W: 1 | L: 1 | P: 1", summary)
+        self.assertIn("+50 chips", summary)
 
 
 class TestStrategy(unittest.TestCase):
@@ -44,23 +87,22 @@ class TestStrategy(unittest.TestCase):
 
 
 class TestOcr(unittest.TestCase):
+    def test_bankroll_ocr(self):
+        detector = OcrDetector()
+        chips1 = detector.read_bankroll("desktop_bot/Split6.png")
+        self.assertEqual(chips1, 22345)
+
+        chips2 = detector.read_bankroll("desktop_bot/After Split 5.png")
+        self.assertEqual(chips2, 23393)
+
     def test_sample_screenshots(self):
         detector = OcrDetector()
-
-        # Play screen
-        play_img = "/Users/parth/.gemini/antigravity/brain/062cfa4b-f325-45ba-a7d5-4deb3d49b768/.user_uploaded/media_1788872421307.png"
-        state = detector.detect(play_img)
-        print(f"\n[Test OCR Play Screen] Phase: {state.phase}, Dealer: {state.dealer_card}, Total: {state.player_total}, Soft: {state.is_soft}")
+        state = detector.detect("desktop_bot/Split6.png")
         self.assertEqual(state.phase, "PLAYING")
-        self.assertEqual(state.dealer_card, Card.TEN)
-        self.assertEqual(state.player_total, 17)
-        self.assertTrue(state.is_soft)
-
-        # Bet screen
-        bet_img = "/Users/parth/.gemini/antigravity/brain/062cfa4b-f325-45ba-a7d5-4deb3d49b768/.user_uploaded/media_1788872404757.png"
-        state_bet = detector.detect(bet_img)
-        print(f"[Test OCR Bet Screen] Phase: {state_bet.phase}")
-        self.assertEqual(state_bet.phase, "BETTING")
+        self.assertEqual(state.dealer_card, Card.TWO)
+        self.assertEqual(state.player_total, 12)
+        self.assertFalse(state.is_soft)
+        self.assertTrue(state.can_split)
 
 
 if __name__ == "__main__":

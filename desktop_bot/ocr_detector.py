@@ -29,6 +29,7 @@ class GameState:
     raw_buttons_text: str = ""
     available_buttons: dict = None
     player_hands: list = None
+    bankroll: Optional[int] = None
 
     def __post_init__(self):
         if self.available_buttons is None:
@@ -44,6 +45,7 @@ class OcrDetector:
     PLAYER_SCORE_BOX = (0.776, 0.390, 0.816, 0.607)
     BET_AREA_BOX = (0.330, 0.200, 0.450, 0.800)
     BUTTONS_ROW_BOX = (0.830, 0.050, 0.940, 0.950)
+    BANKROLL_BOX = (0.065, 0.350, 0.115, 0.650)
 
     # Full-width search bands for TSV whole-screen scanning. Wider than the
     # fixed crop boxes so values are found wherever the layout puts them
@@ -158,6 +160,29 @@ class OcrDetector:
             return diff < threshold
         except Exception:
             return False
+
+    def read_bankroll(self, screenshot_path: str) -> Optional[int]:
+        """
+        Extracts current chips bankroll total from the top area.
+        Returns parsed integer (e.g. 22345 from '22,345'), or None.
+        """
+        if not os.path.exists(screenshot_path):
+            return None
+        crop_path = os.path.join(self.work_dir, "crop_bankroll.png")
+        self.crop_region(screenshot_path, self.BANKROLL_BOX, crop_path)
+        if not os.path.exists(crop_path):
+            return None
+
+        text = self.run_ocr(crop_path, psm=7, digits_only=True)
+        digits = re.sub(r"[^\d]", "", text)
+        if digits:
+            try:
+                val = int(digits)
+                if val > 0:
+                    return val
+            except ValueError:
+                pass
+        return None
 
     def run_ocr(self, img_path: str, psm: int = 7, digits_only: bool = False) -> str:
         """Executes Tesseract on image file and returns cleaned text."""
@@ -359,11 +384,13 @@ class OcrDetector:
 
         # Check for BETTING phase
         if "PLACE" in bet_text.upper() or "BET" in bet_text.upper():
+            bankroll = self.read_bankroll(screenshot_path)
             return GameState(
                 phase="BETTING",
                 raw_dealer_text=dealer_text,
                 raw_player_text=player_text,
                 raw_buttons_text=buttons_text,
+                bankroll=bankroll,
             )
 
         # ONE full-screen scan; every detector reuses these words.
@@ -435,6 +462,7 @@ class OcrDetector:
                 player_hands=player_hands,
             )
 
+        bankroll = self.read_bankroll(screenshot_path)
         return GameState(
             phase="BETTING",
             raw_dealer_text=dealer_text,
@@ -442,6 +470,7 @@ class OcrDetector:
             raw_buttons_text=buttons_text,
             available_buttons=available_buttons,
             player_hands=player_hands,
+            bankroll=bankroll,
         )
 
     @staticmethod
