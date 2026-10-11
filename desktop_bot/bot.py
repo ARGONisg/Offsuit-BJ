@@ -344,8 +344,33 @@ class BlackjackBot:
 
         except KeyboardInterrupt:
             print(f"\n{YELLOW}Bot stopped by user.{RESET}")
+        finally:
             if self.tracker.hands_played > 0:
                 print(f"\n{self.tracker.format_summary()}\n")
+                self._append_to_master_summary()
+            self.logger.stop()
+
+    def _append_to_master_summary(self):
+        """Appends the completed session summary to the master log file."""
+        try:
+            master_log = os.path.join(self.logger.log_dir, "master_summary.log")
+            ts = time.strftime("%Y-%m-%d %H:%M:%S")
+            log_name = os.path.basename(self.logger.log_file_path)
+            entry = (
+                f"\n--------------------------------------------------------------------------------\n"
+                f" SESSION: {log_name}\n"
+                f" Recorded:            {ts}\n"
+                f" Hands Played:        {self.tracker.hands_played}\n"
+                f" Outcomes:            {self.tracker.wins} Wins | {self.tracker.losses} Losses | {self.tracker.pushes} Pushes\n"
+                f" Win Rate:            {self.tracker.win_rate:.1f}%\n"
+                f" Net Profit:          {self.tracker.net_profit:+,} chips\n"
+                f" Starting Bankroll:   {self.tracker.start_bankroll:,}\n"
+                f" Ending Bankroll:     {self.tracker.current_bankroll:,}\n"
+            )
+            with open(master_log, "a", encoding="utf-8") as f:
+                f.write(entry)
+        except Exception as e:
+            print(f"{YELLOW}[Warning] Could not update master summary: {e}{RESET}")
 
 
 if __name__ == "__main__":

@@ -1,8 +1,10 @@
-"""
-Verification tests for strategy engine and OCR detector.
-"""
-
+import os
+import sys
 import unittest
+
+# Ensure desktop_bot package is on sys.path regardless of execution CWD
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 from strategy import Action, Card, get_action
 from ocr_detector import OcrDetector
 from tracker import BankrollTracker
@@ -88,16 +90,22 @@ class TestStrategy(unittest.TestCase):
 
 class TestOcr(unittest.TestCase):
     def test_bankroll_ocr(self):
+        sample1 = "desktop_bot/Split6.png"
+        sample2 = "desktop_bot/After Split 5.png"
+        if not os.path.exists(sample1) or not os.path.exists(sample2):
+            self.skipTest("Sample split screenshots not present on disk.")
         detector = OcrDetector()
-        chips1 = detector.read_bankroll("desktop_bot/Split6.png")
+        chips1 = detector.read_bankroll(sample1)
         self.assertEqual(chips1, 22345)
-
-        chips2 = detector.read_bankroll("desktop_bot/After Split 5.png")
+        chips2 = detector.read_bankroll(sample2)
         self.assertEqual(chips2, 23393)
 
     def test_sample_screenshots(self):
+        sample = "desktop_bot/Split6.png"
+        if not os.path.exists(sample):
+            self.skipTest(f"{sample} not present on disk.")
         detector = OcrDetector()
-        state = detector.detect("desktop_bot/Split6.png")
+        state = detector.detect(sample)
         self.assertEqual(state.phase, "PLAYING")
         self.assertEqual(state.dealer_card, Card.TWO)
         self.assertEqual(state.player_total, 12)
@@ -108,6 +116,8 @@ class TestOcr(unittest.TestCase):
         import glob
         detector = OcrDetector()
         error_shots = sorted(glob.glob("desktop_bot/work/error_screenshots/*.png"))
+        if not error_shots:
+            self.skipTest("No error screenshots found to test.")
         for shot in error_shots:
             state = detector.detect(shot)
             self.assertEqual(state.phase, "PLAYING")

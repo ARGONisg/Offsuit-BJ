@@ -71,3 +71,12 @@ desktop_bot *
 desktop_bot8Sep*
 *Backup*
 *.pages
+
+# --- Local Sample & Calibration Images ---
+desktop_bot/*.png
+desktop_bot/*.jpg
+desktop_bot/*.jpeg
+*.png
+*.jpg
+*.jpeg
+

@@ -1,0 +1,2 @@
+# Offsuit BJ - Desktop Bot Requirements
+Pillow>=10.0.0
