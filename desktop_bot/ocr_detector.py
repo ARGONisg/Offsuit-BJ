@@ -61,6 +61,8 @@ class OcrDetector:
             self.has_pil = True
         except ImportError:
             self.has_pil = False
+        self._last_frame_bytes = None
+        self._last_state: Optional[GameState] = None
 
     def _find_tesseract(self) -> str:
         candidates = ["/opt/homebrew/bin/tesseract", "/usr/local/bin/tesseract", "tesseract"]
@@ -133,6 +135,30 @@ class OcrDetector:
         except Exception:
             return img_path
 
+    def is_screen_static(self, screenshot_path: str, threshold: float = 1.5) -> bool:
+        """
+        Computes lightweight perceptual difference against previous frame in RAM.
+        Returns True if the screen is virtually identical (< threshold diff),
+        allowing the bot loop to skip heavy full-screen OCR passes.
+        """
+        if not self.has_pil or not os.path.exists(screenshot_path):
+            return False
+        try:
+            from PIL import Image
+            with Image.open(screenshot_path) as img:
+                thumb = img.resize((32, 32)).convert("L")
+                cur_bytes = list(thumb.getdata())
+
+            if self._last_frame_bytes is None:
+                self._last_frame_bytes = cur_bytes
+                return False
+
+            diff = sum(abs(a - b) for a, b in zip(cur_bytes, self._last_frame_bytes)) / 1024.0
+            self._last_frame_bytes = cur_bytes
+            return diff < threshold
+        except Exception:
+            return False
+
     def run_ocr(self, img_path: str, psm: int = 7, digits_only: bool = False) -> str:
         """Executes Tesseract on image file and returns cleaned text."""
         try:
@@ -146,34 +172,47 @@ class OcrDetector:
 
     def run_ocr_digits(self, img_path: str) -> str:
         """
-        Multi-pass OCR focused on reading a number from a small crop.
-        Tries the raw crop and preprocessed versions (4x, 6x upscale, and
-        inverted) with multiple PSM modes. Returns the best digit string found.
+        Optimized numeric OCR with fast-path early return.
+        Tries preprocessed 4x upscale with PSM 7 first; if a clean digit/soft total
+        is found, exits immediately without spawning additional Tesseract processes.
         """
-        # Prepare preprocessed versions at different scales
+        if not os.path.exists(img_path):
+            return ""
+
         base = os.path.splitext(img_path)
         processed_4x = base[0] + "_processed" + base[1]
-        processed_6x = base[0] + "_processed6x" + base[1]
         self.preprocess_for_ocr(img_path, processed_4x, scale=4)
+
+        # Fast path 1: Preprocessed 4x with single-line PSM 7
+        text_4x = self.run_ocr(processed_4x, psm=7, digits_only=True).strip().replace(" ", "")
+        if re.fullmatch(r"\d{1,2}", text_4x) or re.fullmatch(r"\d{1,2}[\/|IL]\d{1,2}", text_4x):
+            return text_4x
+
+        # Fast path 2: Raw crop with PSM 7
+        text_raw = self.run_ocr(img_path, psm=7, digits_only=True).strip().replace(" ", "")
+        if re.fullmatch(r"\d{1,2}", text_raw) or re.fullmatch(r"\d{1,2}[\/|IL]\d{1,2}", text_raw):
+            return text_raw
+
+        # Fallback only when fast paths fail: try 6x and additional PSM modes
+        processed_6x = base[0] + "_processed6x" + base[1]
         self.preprocess_for_ocr(img_path, processed_6x, scale=6)
 
-        candidates = []
-        for path in [img_path, processed_4x, processed_6x]:
-            for psm in [7, 10, 13]:
-                text = self.run_ocr(path, psm=psm, digits_only=True)
-                text = text.strip().replace(" ", "")
+        candidates = [text_4x, text_raw]
+        for path in [processed_4x, processed_6x]:
+            for psm in [10, 13]:
+                text = self.run_ocr(path, psm=psm, digits_only=True).strip().replace(" ", "")
                 if text and re.search(r"\d", text):
+                    if re.fullmatch(r"\d{1,2}", text) or re.fullmatch(r"\d{1,2}[\/|IL]\d{1,2}", text):
+                        return text
                     candidates.append(text)
 
-        # Prefer results that are pure digit(s) or digit/digit (soft totals)
         for c in candidates:
-            if re.fullmatch(r"\d{1,2}", c):
+            if c and re.fullmatch(r"\d{1,2}", c):
                 return c
         for c in candidates:
-            if re.fullmatch(r"\d{1,2}/\d{1,2}", c):
+            if c and re.fullmatch(r"\d{1,2}[\/|IL]\d{1,2}", c):
                 return c
-        # Return any candidate with digits
-        return candidates[0] if candidates else ""
+        return candidates[0] if candidates and candidates[0] else ""
 
     def run_ocr_tsv(self, img_path: str, psm: int = 11) -> list:
         """

@@ -11,6 +11,7 @@ import shutil
 import sys
 import time
 from adb_controller import AdbController
+from logger import BotLogger
 from ocr_detector import OcrDetector, GameState
 from strategy import Action, Card, get_action
 
@@ -65,7 +66,9 @@ class ErrorScreenshotTracker:
 
 
 class BlackjackBot:
-    def __init__(self, adb_path: str = None, tesseract_path: str = None):
+    def __init__(self, adb_path: str = None, tesseract_path: str = None, log_dir: str = None):
+        self.logger = BotLogger(log_dir)
+        self.logger.start()
         self.adb = AdbController(adb_path)
         work_dir = os.path.join(os.path.dirname(__file__), "work")
         self.detector = OcrDetector(tesseract_path, work_dir=work_dir)
@@ -158,10 +161,12 @@ class BlackjackBot:
         print(f"Connected to device: {GREEN}{width}x{height}{RESET}")
         print(f"Tesseract OCR:       {GREEN}{self.detector.tesseract_path}{RESET}")
         print(f"Rules:               {CYAN}8 Decks (shuffled each hand), Double Down, No Resplit, 5-Card Charlie{RESET}")
+        print(f"Session Log:         {GREEN}{self.logger.log_file_path}{RESET}")
         print(f"\n{YELLOW}Bot is running. Press Ctrl+C to stop at any time.{RESET}\n")
 
         consecutive_betting_ticks = 0
         consecutive_waiting_ticks = 0
+        last_state = None
 
         try:
             while True:
@@ -174,10 +179,17 @@ class BlackjackBot:
                     time.sleep(0.5)
                     continue
 
-                # 2. Analyze state
-                state = self.detector.detect(self.screen_png)
+                # 2. Check for static screen to eliminate redundant OCR
+                is_static = self.detector.is_screen_static(self.screen_png)
+                if is_static and last_state and last_state.phase in ("BETTING", "WAITING"):
+                    time.sleep(0.8)
+                    continue
 
-                # 3. Handle state
+                # 3. Analyze state
+                state = self.detector.detect(self.screen_png)
+                last_state = state
+
+                # 4. Handle state
                 if state.phase == "BETTING":
                     consecutive_betting_ticks += 1
                     consecutive_waiting_ticks = 0
@@ -187,7 +199,8 @@ class BlackjackBot:
                         msg = "[BETTING] Waiting for deal... (chips untouched)"
                         print(f"[{time.strftime('%H:%M:%S')}] {YELLOW}{msg}{RESET}")
                         self.error_tracker.check(msg)
-                    time.sleep(0.5)
+                    # Relaxed pacing in betting phase to prevent CPU heat
+                    time.sleep(1.5)
                     continue
 
                 consecutive_betting_ticks = 0
@@ -203,7 +216,8 @@ class BlackjackBot:
                         )
                         print(f"[{time.strftime('%H:%M:%S')}] {msg}")
                         self.error_tracker.check(msg)
-                    time.sleep(0.3)
+                    # Relaxed pacing while waiting for deal animations
+                    time.sleep(0.8)
                     continue
 
                 consecutive_waiting_ticks = 0
