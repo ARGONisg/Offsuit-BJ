@@ -432,6 +432,8 @@ class OcrDetector:
             is_pair = can_split
             pair_val = 11 if (can_split and is_soft) else (player_total // 2 if can_split else 0)
 
+            bankroll = self.read_bankroll(screenshot_path)
+
             return GameState(
                 phase="PLAYING",
                 dealer_card=dealer_card,
@@ -446,6 +448,7 @@ class OcrDetector:
                 raw_buttons_text=buttons_text,
                 available_buttons=available_buttons,
                 player_hands=player_hands,
+                bankroll=bankroll,
             )
 
         if has_buttons:

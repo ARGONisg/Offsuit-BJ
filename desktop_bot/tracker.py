@@ -29,9 +29,10 @@ class BankrollTracker:
             return 0.0
         return (self.wins / decided) * 100.0
 
-    def update(self, chips: int) -> Optional[Dict[str, Any]]:
+    def update(self, chips: int, hand_completed: bool = False) -> Optional[Dict[str, Any]]:
         """
         Updates tracker with new detected chip balance.
+        If hand_completed is True and delta is 0, records a PUSH.
         Returns a dict describing the outcome if a hand completed, else None.
         """
         if chips <= 0:
@@ -49,6 +50,17 @@ class BankrollTracker:
         # Check delta against last recorded hand
         delta = chips - self.last_bankroll
         if delta == 0:
+            if hand_completed:
+                self.hands_played += 1
+                self.pushes += 1
+                return {
+                    "outcome": "PUSH",
+                    "delta": 0,
+                    "chips": chips,
+                    "net_profit": self.net_profit,
+                    "win_rate": self.win_rate,
+                    "hands": self.hands_played,
+                }
             return None
 
         self.hands_played += 1
