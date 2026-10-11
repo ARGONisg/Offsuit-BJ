@@ -60,6 +60,8 @@ ENV/
 # --- Bot Runtime / Working Directories & Logs ---
 **/work/
 work/
+**/logs/
+logs/
 error_screenshots/
 *.log
 

@@ -2,7 +2,7 @@
 """
 Blackjack Automation Bot (Desktop ADB + Tesseract OCR).
 Executes basic single-deck strategy, 5-card charlie, and auto-play
-over ADB for any Android Blackjack game.
+over ADB for Offsuit Blackjack game.
 """
 
 import argparse
