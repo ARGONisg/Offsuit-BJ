@@ -207,7 +207,6 @@ class BlackjackBot:
                         chips_info = f"{state.bankroll:,}" if state.bankroll else "chips untouched"
                         msg = f"[BETTING] Waiting for deal... ({chips_info})"
                         print(f"[{time.strftime('%H:%M:%S')}] {YELLOW}{msg}{RESET}")
-                        self.error_tracker.check(msg)
                     # Relaxed pacing in betting phase to prevent CPU heat
                     time.sleep(1.5)
                     continue
@@ -225,7 +224,9 @@ class BlackjackBot:
                             f"buttons_raw='{state.raw_buttons_text}' btns={sorted(state.available_buttons.keys())})"
                         )
                         print(f"[{time.strftime('%H:%M:%S')}] {msg}")
-                        self.error_tracker.check(msg)
+                        # Only trigger error tracker if stuck for an excessively long time (~16s)
+                        if consecutive_waiting_ticks >= 20:
+                            self.error_tracker.check(f"[WAITING] Stuck in animation loop ({consecutive_waiting_ticks} ticks)")
                     # Relaxed pacing while waiting for deal animations
                     time.sleep(0.8)
                     continue
@@ -291,6 +292,19 @@ class BlackjackBot:
                     if btn_key not in available_buttons:
                         if btn_key == "DOUBLE" or btn_key == "SPLIT":
                             btn_key = "HIT"
+
+                    if btn_key not in available_buttons:
+                        # Geometric fallback if button was read in text or buttons row is active
+                        raw_btns = state.raw_buttons_text.upper()
+                        if btn_key in raw_btns or (btn_key in ("HIT", "STAND") and ("HIT" in raw_btns or "STAND" in raw_btns)):
+                            layout_coords = {
+                                "STAND": (0.37, 0.91),
+                                "HIT": (0.63, 0.91),
+                                "DOUBLE": (0.75, 0.91),
+                                "SPLIT": (0.85, 0.91),
+                            }
+                            if btn_key in layout_coords:
+                                available_buttons[btn_key] = layout_coords[btn_key]
 
                     if btn_key not in available_buttons:
                         msg = (

@@ -84,6 +84,14 @@ class BankrollTracker:
             "hands": self.hands_played,
         }
 
+    def record_push(self, chips: Optional[int] = None) -> Optional[dict]:
+        """Record a push outcome (either explicitly or via same-chip update)."""
+        if chips is not None:
+            return self.update(chips)
+        self.pushes += 1
+        self.hands_played += 1
+        return None
+
     def _classify_win(self, delta: int) -> str:
         """Infer win type from delta/bet ratio."""
         if self.bet_size <= 0:

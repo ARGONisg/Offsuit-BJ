@@ -398,6 +398,35 @@ class OcrDetector:
         words = self.run_ocr_tsv(screenshot_path, psm=11) if w and h else []
 
         available_buttons = self._buttons_from_words(words, w, h)
+
+        # Dual-pass: scan the buttons crop directly to catch buttons missed by full-screen TSV (e.g. 'HIT')
+        crop_buttons = self._buttons_from_crop(buttons_crop, self.BUTTONS_ROW_BOX, w, h)
+        for btn, coords in crop_buttons.items():
+            if btn not in available_buttons:
+                available_buttons[btn] = coords
+
+        # Fallback synthesis: if button was read in text but TSV missed word bounding box
+        buttons_upper = buttons_text.upper()
+        if "HIT" in buttons_upper and "HIT" not in available_buttons:
+            if "STAND" in available_buttons:
+                sx, sy = available_buttons["STAND"]
+                available_buttons["HIT"] = (min(0.85, sx + 0.26), sy)
+            else:
+                available_buttons["HIT"] = (0.63, 0.91)
+
+        if "STAND" in buttons_upper and "STAND" not in available_buttons:
+            if "HIT" in available_buttons:
+                hx, hy = available_buttons["HIT"]
+                available_buttons["STAND"] = (max(0.15, hx - 0.26), hy)
+            else:
+                available_buttons["STAND"] = (0.37, 0.91)
+
+        if "DOUBLE" in buttons_upper and "DOUBLE" not in available_buttons:
+            available_buttons["DOUBLE"] = (0.75 if "SPLIT" not in buttons_upper else 0.62, 0.91)
+
+        if "SPLIT" in buttons_upper and "SPLIT" not in available_buttons:
+            available_buttons["SPLIT"] = (0.85, 0.91)
+
         dealer_card = self._dealer_from_words(words, w, h) or self.parse_dealer(dealer_text)
         player_hands = self._player_hands_from_words(words, w, h)
 
@@ -418,7 +447,6 @@ class OcrDetector:
         elif player_total > 0:
             player_hands = [(is_soft, player_total)]
 
-        buttons_upper = buttons_text.upper()
         has_buttons = bool(available_buttons) or any(
             b in buttons_upper for b in ["STAND", "HIT", "DOUBLE", "SPLIT"]
         )
@@ -498,7 +526,14 @@ class OcrDetector:
         if not w or not h:
             return {}
         words = self.run_ocr_tsv(screenshot_path, psm=11)
-        return self._buttons_from_words(words, w, h)
+        buttons = self._buttons_from_words(words, w, h)
+        buttons_crop = os.path.join(self.work_dir, "crop_buttons.png")
+        self.crop_region(screenshot_path, self.BUTTONS_ROW_BOX, buttons_crop)
+        crop_btns = self._buttons_from_crop(buttons_crop, self.BUTTONS_ROW_BOX, w, h)
+        for btn, coords in crop_btns.items():
+            if btn not in buttons:
+                buttons[btn] = coords
+        return buttons
 
     def _buttons_from_words(self, words: list, w: int, h: int) -> dict:
         """Maps button words -> (normalized_x, normalized_y) tap points."""
@@ -517,6 +552,39 @@ class OcrDetector:
                     available_buttons[btn_name] = (center_x, center_y)
                     break
         return available_buttons
+
+    def _buttons_from_crop(self, crop_path: str, box: tuple, w: int, h: int) -> dict:
+        """Extracts button coordinates directly from the cropped buttons band."""
+        if not os.path.exists(crop_path) or not w or not h:
+            return {}
+        ymin, xmin, ymax, xmax = box
+        crop_x0 = int(xmin * w)
+        crop_y0 = int(ymin * h)
+
+        # Try psm=11 first, fallback to psm=6 if no buttons detected
+        words = self.run_ocr_tsv(crop_path, psm=11)
+        found = any(
+            self._button_text_matches(btn, wd.get("text", ""))
+            for btn in ("STAND", "HIT", "DOUBLE", "SPLIT")
+            for wd in words
+        )
+        if not found:
+            words = self.run_ocr_tsv(crop_path, psm=6)
+
+        buttons = {}
+        for word in words:
+            upper = word["text"].upper().strip().replace(",", "").replace(".", "")
+            if not upper:
+                continue
+            for btn_name in ("SPLIT", "STAND", "HIT", "DOUBLE"):
+                if btn_name in buttons:
+                    continue
+                if self._button_text_matches(btn_name, upper):
+                    center_x = (crop_x0 + word["left"] + word["width"] / 2) / w
+                    center_y = (crop_y0 + word["top"] + word["height"] / 2) / h
+                    buttons[btn_name] = (center_x, center_y)
+                    break
+        return buttons
 
     @staticmethod
     def _card_rank_from_text(text: str) -> Optional[Card]:

@@ -60,13 +60,24 @@ class AdbController:
         return self.width, self.height
 
     def capture_screenshot(self, output_png_path: str) -> bool:
-        """Captures raw screen directly into a PNG file via adb exec-out."""
+        """Captures raw screen into a PNG file via adb exec-out atomically."""
+        tmp_path = f"{output_png_path}.tmp"
         try:
-            with open(output_png_path, "wb") as f:
+            with open(tmp_path, "wb") as f:
                 cmd = [self.adb_path, "exec-out", "screencap", "-p"]
                 subprocess.run(cmd, stdout=f, stderr=subprocess.PIPE, check=True)
-            return os.path.exists(output_png_path) and os.path.getsize(output_png_path) > 0
+            if os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 1024:
+                os.replace(tmp_path, output_png_path)
+                return True
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            return False
         except Exception as e:
+            if os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
             print(f"[ADB Error] Screencap failed: {e}")
             return False
 

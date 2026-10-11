@@ -104,6 +104,16 @@ class TestOcr(unittest.TestCase):
         self.assertFalse(state.is_soft)
         self.assertTrue(state.can_split)
 
+    def test_error_screenshots_button_detection(self):
+        import glob
+        detector = OcrDetector()
+        error_shots = sorted(glob.glob("desktop_bot/work/error_screenshots/*.png"))
+        for shot in error_shots:
+            state = detector.detect(shot)
+            self.assertEqual(state.phase, "PLAYING")
+            self.assertIn("HIT", state.available_buttons, f"HIT missing in {shot}")
+            self.assertIn("STAND", state.available_buttons, f"STAND missing in {shot}")
+
 
 if __name__ == "__main__":
     unittest.main()
