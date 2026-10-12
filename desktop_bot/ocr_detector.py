@@ -45,7 +45,7 @@ class OcrDetector:
     PLAYER_SCORE_BOX = (0.776, 0.390, 0.816, 0.607)
     BET_AREA_BOX = (0.330, 0.200, 0.450, 0.800)
     BUTTONS_ROW_BOX = (0.830, 0.050, 0.940, 0.950)
-    BANKROLL_BOX = (0.065, 0.350, 0.115, 0.650)
+    BANKROLL_BOX = (0.065, 0.320, 0.115, 0.680)
 
     # Full-width search bands for TSV whole-screen scanning. Wider than the
     # fixed crop boxes so values are found wherever the layout puts them
@@ -164,6 +164,7 @@ class OcrDetector:
     def read_bankroll(self, screenshot_path: str) -> Optional[int]:
         """
         Extracts current chips bankroll total from the top area.
+        Preprocesses crop (upscale + binarize) for high reliability.
         Returns parsed integer (e.g. 22345 from '22,345'), or None.
         """
         if not os.path.exists(screenshot_path):
@@ -173,7 +174,11 @@ class OcrDetector:
         if not os.path.exists(crop_path):
             return None
 
-        text = self.run_ocr(crop_path, psm=7, digits_only=True)
+        # Preprocess with 3x upscale + binarization for clean digit isolation
+        proc_path = os.path.join(self.work_dir, "crop_bankroll_proc.png")
+        self.preprocess_for_ocr(crop_path, proc_path, scale=3)
+
+        text = self.run_ocr(proc_path, psm=7, digits_only=True)
         digits = re.sub(r"[^\d]", "", text)
         if digits:
             try:
@@ -182,6 +187,18 @@ class OcrDetector:
                     return val
             except ValueError:
                 pass
+
+        # Fallback to raw crop if preprocessing threshold was too aggressive
+        text_raw = self.run_ocr(crop_path, psm=7, digits_only=True)
+        digits_raw = re.sub(r"[^\d]", "", text_raw)
+        if digits_raw:
+            try:
+                val = int(digits_raw)
+                if val > 0:
+                    return val
+            except ValueError:
+                pass
+
         return None
 
     def run_ocr(self, img_path: str, psm: int = 7, digits_only: bool = False) -> str:

@@ -12,7 +12,7 @@ from tracker import BankrollTracker
 
 class TestTracker(unittest.TestCase):
     def test_bankroll_tracker_outcomes(self):
-        tracker = BankrollTracker()
+        tracker = BankrollTracker(auto_decompose=False)
         
         # First reading: initializes baseline
         res1 = tracker.update(1000)
@@ -50,6 +50,46 @@ class TestTracker(unittest.TestCase):
         self.assertIn("SESSION STATS", summary)
         self.assertIn("W: 1 | L: 1 | P: 1", summary)
         self.assertIn("+50 chips", summary)
+
+    def test_composite_decomposition(self):
+        tracker = BankrollTracker(bet_size=10, auto_decompose=True)
+        tracker.update(1000)  # baseline
+
+        # Single win (+10)
+        r = tracker.update(1010)
+        self.assertEqual(r["outcome"], "WIN")
+        self.assertEqual(tracker.hands_played, 1)
+        self.assertEqual(tracker.wins, 1)
+
+        # Natural Blackjack (+15)
+        r = tracker.update(1025)
+        self.assertEqual(r["outcome"], "BLACKJACK")
+        self.assertEqual(tracker.hands_played, 2)
+        self.assertEqual(tracker.blackjacks, 1)
+
+        # Double win (+20 with was_double=True)
+        r = tracker.update(1045, was_double=True)
+        self.assertEqual(r["outcome"], "DOUBLE WIN")
+        self.assertEqual(tracker.hands_played, 3)
+        self.assertEqual(tracker.doubles_won, 1)
+
+        # 5 skipped losses (-50)
+        r = tracker.update(995)
+        self.assertEqual(r["outcome"], "5x LOSS")
+        self.assertEqual(tracker.hands_played, 8)  # 3 + 5
+        self.assertEqual(tracker.losses, 5)
+
+        # Blackjack + 3 wins (+45)
+        r = tracker.update(1040)
+        self.assertEqual(r["outcome"], "BLACKJACK + 3x WIN")
+        self.assertEqual(tracker.hands_played, 12)  # 8 + 4
+        self.assertEqual(tracker.blackjacks, 2)
+
+        # Blackjack + 1 loss (+5)
+        r = tracker.update(1045)
+        self.assertEqual(r["outcome"], "BLACKJACK + 1x LOSS")
+        self.assertEqual(tracker.hands_played, 14)  # 12 + 2
+        self.assertEqual(tracker.losses, 6)
 
 
 class TestStrategy(unittest.TestCase):

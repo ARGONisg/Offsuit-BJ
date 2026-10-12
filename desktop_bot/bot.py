@@ -79,6 +79,9 @@ class BlackjackBot:
         self.action_cooldown = 1.2  # Seconds to wait after an action for animation
         self.active_hand_index = 0  # Which split hand to play next
         self.advance_hand = False   # Move to next split hand after STAND/DOUBLE
+        self.hand_pending_resolution = False  # Set when terminal action ends player turn
+        self.last_hand_signature = None       # (dealer_card, is_soft, player_total)
+        self.last_action_was_double = False   # Helps tracker distinguish Double Win from 2x Win
         self._bankroll_recorded_this_hand = False  # Set True after PLAYING-phase bankroll read
         error_shots_dir = os.path.join(work_dir, "error_screenshots")
         self.error_tracker = ErrorScreenshotTracker(
@@ -202,6 +205,8 @@ class BlackjackBot:
                     self.active_hand_index = 0
                     self.advance_hand = False
                     self._bankroll_recorded_this_hand = False
+                    self.hand_pending_resolution = False
+                    self.last_hand_signature = None
 
                     if consecutive_betting_ticks % 6 == 1:
                         chips_info = f"{state.bankroll:,}" if state.bankroll else "chips untouched"
@@ -215,7 +220,14 @@ class BlackjackBot:
 
                 if state.phase == "WAITING":
                     consecutive_waiting_ticks += 1
-                    self._bankroll_recorded_this_hand = False
+                    # Only reset hand if the previous hand reached terminal resolution
+                    if self.hand_pending_resolution:
+                        self._bankroll_recorded_this_hand = False
+                        self.hand_pending_resolution = False
+                        self.active_hand_index = 0
+                        self.advance_hand = False
+                        self.last_hand_signature = None
+
                     if consecutive_waiting_ticks == 1 or consecutive_waiting_ticks % 5 == 0:
                         msg = (
                             f"[WAITING] Cards dealing or animating... "
@@ -234,22 +246,49 @@ class BlackjackBot:
                 consecutive_waiting_ticks = 0
 
                 if state.phase == "PLAYING" and state.dealer_card and state.player_total > 0:
+                    # Detect new hand under auto-deal (without visiting BETTING):
+                    # 1. Previous hand finished its player turn (hand_pending_resolution)
+                    # 2. Dealer upcard changed (dealer card never changes mid-hand)
+                    # 3. Player score dropped/reset without advance_hand
+                    current_sig = (state.dealer_card, state.is_soft, state.player_total)
+                    is_new_hand = False
+                    if self.hand_pending_resolution:
+                        is_new_hand = True
+                    elif self.last_hand_signature is not None:
+                        last_dealer, last_soft, last_total = self.last_hand_signature
+                        if state.dealer_card != last_dealer:
+                            is_new_hand = True
+                        elif not self.advance_hand and state.player_total < last_total and not last_soft:
+                            is_new_hand = True
+
+                    if is_new_hand:
+                        self._bankroll_recorded_this_hand = False
+                        self.hand_pending_resolution = False
+                        self.active_hand_index = 0
+                        self.advance_hand = False
+
+                    self.last_hand_signature = current_sig
+
                     # Read bankroll once per hand when buttons are visible (post-ante).
                     # Delta between consecutive readings = true profit.
+                    # Only mark recorded if tracker successfully accepted the reading (or initialized baseline).
                     if not self._bankroll_recorded_this_hand and state.bankroll is not None:
-                        self._bankroll_recorded_this_hand = True
-                        result = self.tracker.update(state.bankroll)
-                        if result:
-                            oc = result["outcome"]
-                            outcome_color = GREEN if oc in ("WIN", "BLACKJACK", "DOUBLE WIN") else (
-                                YELLOW if oc == "PUSH" else RED)
-                            print(
-                                f"[{time.strftime('%H:%M:%S')}] {BOLD}{outcome_color}"
-                                f">> HAND RESULT: {oc} ({result['delta']:+,} chips) | "
-                                f"Bankroll: {result['chips']:,} | Net: {result['net_profit']:+,} | "
-                                f"Win Rate: {result['win_rate']:.1f}% ({self.tracker.wins}W-{self.tracker.losses}L-{self.tracker.pushes}P)"
-                                f"{RESET}"
-                            )
+                        initial_check = self.tracker.start_bankroll is None
+                        result = self.tracker.update(state.bankroll, was_double=self.last_action_was_double)
+                        self.last_action_was_double = False
+                        if result is not None or initial_check:
+                            self._bankroll_recorded_this_hand = True
+                            if result:
+                                oc = result["outcome"]
+                                outcome_color = GREEN if ("WIN" in oc or "BLACKJACK" in oc) else (
+                                    YELLOW if oc == "PUSH" else RED)
+                                print(
+                                    f"[{time.strftime('%H:%M:%S')}] {BOLD}{outcome_color}"
+                                    f">> HAND RESULT: {oc} ({result['delta']:+,} chips) | "
+                                    f"Bankroll: {result['chips']:,} | Net: {result['net_profit']:+,} | "
+                                    f"Win Rate: {result['win_rate']:.1f}% ({self.tracker.wins}W-{self.tracker.losses}L-{self.tracker.pushes}P)"
+                                    f"{RESET}"
+                                )
 
                     now = time.time()
                     if now - self.last_action_time < self.action_cooldown:
@@ -268,6 +307,10 @@ class BlackjackBot:
 
                     # A busted hand needs no action; wait for the game to move on.
                     if total > 21:
+                        if self.active_hand_index + 1 >= len(hands):
+                            self.hand_pending_resolution = True
+                        else:
+                            self.advance_hand = True
                         time.sleep(0.3)
                         continue
 
@@ -331,12 +374,17 @@ class BlackjackBot:
                     self.last_action_time = time.time()
 
                     # STAND / DOUBLE end the current hand -> next split hand.
+                    if action is Action.DOUBLE_DOWN:
+                        self.last_action_was_double = True
                     if action in (Action.STAND, Action.DOUBLE_DOWN):
                         self.advance_hand = True
+                        if self.active_hand_index + 1 >= len(hands):
+                            self.hand_pending_resolution = True
                     elif action is Action.SPLIT:
                         # Split creates two fresh hands; start from the left.
                         self.active_hand_index = 0
                         self.advance_hand = False
+                        self.hand_pending_resolution = False
 
                     time.sleep(self.action_cooldown)
 
